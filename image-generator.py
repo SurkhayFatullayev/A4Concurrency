@@ -29,7 +29,6 @@ class MinecraftPicturesGenerator:
         self.canvas.pack(fill="both", expand=True)
         self.photo = None
         self.canvas.bind("<Configure>", self.display_image)
-        self.root.after(100, self.process_next_square)
 
     def display_image(self, event=None):
 
@@ -56,24 +55,20 @@ class MinecraftPicturesGenerator:
             image=self.photo,
             anchor="center"
         )
-
+    
     def start_processing(self):
-        if hasattr(self, 'running') and self.running:
-            return
-        self.running = True
-        thread = threading.Thread(
-            target=self.processing_thread,
-            daemon=True
+        if self.mode is False:
+            self.root.after(0, self.process_next_square)
+        elif self.mode is True:
+            self.root.after(0, self.multi_processing)
+
+    def initialize_worker(width, height, image_bytes):
+        global _original_image
+        _original_image = Image.frombytes(
+            "RGB",
+            (width, height),
+            image_bytes
         )
-        thread.start()
-
-
-
-    def processing_thread(self):
-        if self.mode == False:
-            self.process_next_square()
-        elif self.mode == True:
-            self.multi_processing()
 
     def multi_processing(self):
         pass
@@ -83,7 +78,6 @@ class MinecraftPicturesGenerator:
     def process_next_square(self):
         if self.y >= self.height:
             print("Processing completed")
-            self.running = False
             return
 
         x_end = min(self.x + self.square_size, self.width)
@@ -146,12 +140,13 @@ def main():
 
     root = Tk(useTk=1)
 
-    MinecraftPicturesGenerator(
+    generator = MinecraftPicturesGenerator(
         root,
         f"img/{image_path}",
         square_size,
         mode
     )
+    generator.start_processing()
 
     root.mainloop()
 
