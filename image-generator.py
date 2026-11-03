@@ -9,12 +9,15 @@ from PIL import Image, ImageDraw, ImageTk, ImageStat
 
 import queue
 import multiprocessing
-from concurrent.futures import ProcessPoolExecutor
 
+def initialize_worker(width, height, image_bytes, squares, result_queue):
+    image = Image.frombytes("RGB", (width, height), image_bytes)
 
-def initialize_worker(width, height, image_bytes):
-    global _worker_image
-    _worker_image = Image.frombytes("RGB", (width, height), image_bytes)
+    for square in squares:
+        result = process_square(image, square)
+        result_queue.put(result)
+
+    result_queue.put(None)
 
 def process_square(image, square):
     x, y, square_size = square
@@ -23,12 +26,6 @@ def process_square(image, square):
     block = image.crop((x, y, x_end, y_end))
     average_color = tuple(int(value) for value in ImageStat.Stat(block).mean)
     return x, y, x_end, y_end, average_color
-
-
-def process_square_in_worker(square):
-    if _worker_image is None:
-        raise RuntimeError("Worker image has not been initialized")
-    return process_square(_worker_image, square)
 
 class MinecraftPicturesGenerator:
     def __init__(self, root, image_path, square_size, mode):
@@ -102,64 +99,94 @@ class MinecraftPicturesGenerator:
         draw.rectangle((x, y, x_end - 1, y_end - 1), fill=average_color)
 
     def multi_processing(self):
-        #ToDo: i will change ig for blocks of squares
-
         image_bytes = self.original.tobytes()
-        self.results_queue = queue.Queue()
-        self.squares_done = 0
+        #Dividing code to multiple lines
+        rows = [
+            [
+                (x, y, self.square_size)
+                for x in range(0, self.width, self.square_size)
+            ]
+            for y in range(0, self.height, self.square_size)
+        ]
 
-        self.executor = ProcessPoolExecutor(
-            max_workers=multiprocessing.cpu_count(),
-            initializer=initialize_worker,initargs=(self.width, self.height, image_bytes)
-        )
-        print(multiprocessing.cpu_count())
-        squares = list(self.squares)
+        lines = min(multiprocessing.cpu_count(), len(rows))
+        rows_per_cpu = (len(rows) + lines-1)//lines
+        self.processes = []
+        self.worker_queues = []
+        self.finished_workers = 0
 
-        self.total_squares = len(squares)
+        for i in range(lines):
+            assigned_rows = rows[
+                i * rows_per_cpu : (i+1) * rows_per_cpu
+            ]
 
-        for block in squares:
-            future = self.executor.submit(process_square_in_worker, block)
-            future.add_done_callback(self.square_finished)
+            squares = [
+                square
+                for row in assigned_rows
+                for square in row
+            ]
 
-        self.root.after(100, self.update_multiprocessing)
+            if not squares:
+                continue
 
-    def square_finished(self, future):
-        try:
-            result = future.result()
-            self.results_queue.put(result)
-        except Exception as error:
-            self.results_queue.put(error)
+            result_queue = multiprocessing.Queue(maxsize=lines)
+            self.worker_queues.append(result_queue)
+
+            process = multiprocessing.Process(
+                target=initialize_worker,
+                args=(
+                    self.width,
+                    self.height,
+                    image_bytes,
+                    squares,
+                    result_queue
+                )
+            )
+
+            self.processes.append(process)
+            process.start()
+
+        print(f"Started {len(self.processes)} processes")
+
+        self.update_multiprocessing()
 
     def update_multiprocessing(self):
         updated = False
-        while True:
+
+        for result_queue in self.worker_queues:
             try:
-                result = self.results_queue.get_nowait()
+                result = result_queue.get_nowait()
             except queue.Empty:
                 break
-            self.squares_done += 1
-            if isinstance(result, Exception):
-                print(f"Processing error: {result}")
-                continue
-            self.apply_square_result(result)
 
+            if result is None:
+                self.finished_workers += 1
+                break
+
+            self.apply_square_result(result)
             updated = True
 
         if updated:
             self.display_image()
 
-        if self.squares_done >= self.total_squares:
+        if self.finished_workers == len(self.processes):
             print("Processing completed")
-            self.executor.shutdown(wait=False)
-            self.executor = None
+
+            for process in self.processes:
+                process.join()
+
+            for result_queue in self.worker_queues:
+                result_queue.close()
+
             return
 
-        self.root.after(10, self.update_multiprocessing)
+        #Put Timeout here
+        self.root.after(20,self.update_multiprocessing)
 
 def main():
 
     if len(sys.argv) != 4:
-        print("Usage: python main.py <filename.jpg> <square_size> <S|M>")
+        print("Wrong amount of arguments. Please provide <filename.jpg>('Should be in img folder') <square_size> <S|M>")
         return
 
     image_path = sys.argv[1]
@@ -181,14 +208,13 @@ def main():
         print("Error: input file must be JPG.")
         return
 
-    if sys.argv[3] not in ("S", "M"):
-        print("Error: third argument must be 'S' or 'M'.")
-        return
-
     if sys.argv[3] == "S":
         mode=False
-    else:
+    elif sys.argv[3] == "M":
         mode=True
+    else:
+        print("Error: third argument must be 'S' or 'M'.")
+        return
 
     root = Tk(useTk=1)
 
