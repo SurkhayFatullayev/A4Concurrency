@@ -7,11 +7,17 @@ from tkinter import Tk, Canvas
 # PIL library is used for image processing tasks also impossible to do without it
 from PIL import Image, ImageDraw, ImageStat, ImageTk
 
-class ImageAveragingApp:
 
-    def __init__(self, root, image_path, square_size):
+import queue
+import threading
+import multiprocessing
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
+class MinecraftPicturesGenerator:
+    def __init__(self, root, image_path, square_size, mode):
         self.root = root
         self.square_size = square_size
+        self.mode = mode
         self.original = Image.open(image_path).convert("RGB")
         self.width, self.height = self.original.size
         self.x = 0
@@ -19,11 +25,7 @@ class ImageAveragingApp:
         self.result = self.original.copy()
         self.root.title("Minecraft Pictures Generator")
         self.root.geometry("800x600")
-        self.canvas = Canvas(
-            root,
-            background="black",
-            highlightthickness=0
-        )
+        self.canvas = Canvas(root,background="black",highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
         self.photo = None
         self.canvas.bind("<Configure>", self.display_image)
@@ -54,6 +56,30 @@ class ImageAveragingApp:
             image=self.photo,
             anchor="center"
         )
+
+    def start_processing(self):
+        if self.running:
+            return
+        thread = threading.Thread(
+            target=self.processing_thread,
+            daemon=True
+        )
+        thread.start()
+
+
+
+    def processing_thread(self):
+        if self.mode == False:
+            self.single_processing()
+        elif self.mode == True:
+            self.multi_processing()
+
+    def single_processing(self):
+        pass
+
+    def multi_processing(self):
+        pass
+
 
     #recursive processing couldnt find better solution
     def process_next_square(self):
@@ -110,15 +136,26 @@ def main():
         print("Error: input file must be JPG.")
         return
 
+    if sys.argv[3] not in ("S", "M"):
+        print("Error: third argument must be 'S' or 'M'.")
+        return
+
+    if sys.argv[3] == "S":
+        mode=False
+    else:
+        mode=True
+
     root = Tk(useTk=1)
 
-    ImageAveragingApp(
+    MinecraftPicturesGenerator(
         root,
         f"img/{image_path}",
-        square_size
+        square_size,
+        mode
     )
 
     root.mainloop()
+
 
 
 if __name__ == "__main__":
