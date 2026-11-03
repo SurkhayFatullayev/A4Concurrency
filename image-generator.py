@@ -13,11 +13,13 @@ import multiprocessing
 def initialize_worker(width, height, image_bytes, squares, result_queue):
     image = Image.frombytes("RGB", (width, height), image_bytes)
 
-    for square in squares:
-        result = process_square(image, square)
-        result_queue.put(result)
-
-    result_queue.put(None)
+    try:
+        for square in squares:
+            result_queue.put(process_square(image, square))
+    except Exception as error:
+        result_queue.put(("error", str(error)))
+    finally:
+        result_queue.put(None)
 
 def process_square(image, square):
     x, y, square_size = square
@@ -44,7 +46,7 @@ class MinecraftPicturesGenerator:
         self.photo = None
         self.canvas.bind("<Configure>", self.display_image)
 
-    def display_image(self, event=None):
+    def display_image(self, _event=None):
 
         canvas_width = max(self.canvas.winfo_width(), 1)
         canvas_height = max(self.canvas.winfo_height(), 1)
@@ -86,7 +88,7 @@ class MinecraftPicturesGenerator:
         try:
             square = next(self.squares)
         except StopIteration:
-            print("Processing completed")
+            self.finish()
             return
 
         self.apply_square_result(process_square(self.original, square))
@@ -157,11 +159,15 @@ class MinecraftPicturesGenerator:
             try:
                 result = result_queue.get_nowait()
             except queue.Empty:
-                break
+                continue
 
             if result is None:
                 self.finished_workers += 1
-                break
+                continue
+
+            if result[0] == "error":
+                print(f"Worker error: {result[1]}")
+                continue
 
             self.apply_square_result(result)
             updated = True
@@ -178,10 +184,18 @@ class MinecraftPicturesGenerator:
             for result_queue in self.worker_queues:
                 result_queue.close()
 
+            self.finish()
             return
 
         #Put Timeout here
         self.root.after(20,self.update_multiprocessing)
+
+    def finish(self):
+        self.display_image()
+        self.result.save("result.jpg")
+        print(f"Processing completed, saved to result.jpg")
+
+
 
 def main():
 
