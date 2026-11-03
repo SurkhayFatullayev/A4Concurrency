@@ -58,8 +58,9 @@ class MinecraftPicturesGenerator:
         )
 
     def start_processing(self):
-        if self.running:
+        if hasattr(self, 'running') and self.running:
             return
+        self.running = True
         thread = threading.Thread(
             target=self.processing_thread,
             daemon=True
@@ -70,12 +71,9 @@ class MinecraftPicturesGenerator:
 
     def processing_thread(self):
         if self.mode == False:
-            self.single_processing()
+            self.process_next_square()
         elif self.mode == True:
             self.multi_processing()
-
-    def single_processing(self):
-        pass
 
     def multi_processing(self):
         pass
@@ -85,6 +83,7 @@ class MinecraftPicturesGenerator:
     def process_next_square(self):
         if self.y >= self.height:
             print("Processing completed")
+            self.running = False
             return
 
         x_end = min(self.x + self.square_size, self.width)
