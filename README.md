@@ -59,7 +59,7 @@ The main window is created before the generator starts:
 root = Tk(useTk=1)
 ```
 
-The `start_processing` function creates a generator of square coordinates. This avoids building the full list of squares in single-process mode. It then starts the method for the selected mode.
+The `start_processing()` function calculates squares count(leftover from previous multithread implementation where it also needed it now only single needs so can be removed from there) and then based on mode parameter chooses if it should executemulti or single processor solution.
 
 ```python
 def start_processing(self):
@@ -76,9 +76,11 @@ def start_processing(self):
 
 ## Single-Process Mode
 
-`single_processing()` takes the next square, computes its average color from the original image, paints that color onto the result, and refreshes the preview. Tkinter's `after` method schedules the next square so the window can continue responding while the image is processed.
+`single_processing()` goes from square to squareб сomputes the average from the original, paints it onto result, then refreshes the preview.
+the comment above this function is also left over just decided to leave it here
 
 ```python
+#recursive processing couldnt find better solution
 def single_processing(self):
     try:
         square = next(self.squares)
@@ -124,8 +126,12 @@ for i in range(lines):
     squares = [square for row in assigned_rows for square in row]
 ```
 
-Each worker receives the image dimensions, the original image data, its assigned squares, and a result queue. It reconstructs the image and calculates the average color of each assigned square. The worker sends each result back through its queue, then sends a `None` value to signal that it has finished.
+Worker i takes the slice of rows from i * rows_per_cpu up to (i+1) * rows_per_cpu, and then flattens those rows into one list of blocks
 
+```python
+#Put Timeout here
+self.root.after(20,self.update_multiprocessing)
+```
 The main process checks the queues every 20 milliseconds. When it receives a square result, it updates the result image and refreshes the preview. An empty queue does not stop it from checking the other workers.
 
 ```python
